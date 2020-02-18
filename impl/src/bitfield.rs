@@ -1,17 +1,10 @@
 use proc_macro2::TokenStream as TokenStream2;
+use quote::{quote, quote_spanned};
 use syn::{
     self,
-    Token,
+    parse::{Parse, ParseStream, Result},
     punctuated::Punctuated,
-    parse::{
-        Parse,
-        ParseStream,
-        Result,
-    }
-};
-use quote::{
-    quote,
-    quote_spanned,
+    Token,
 };
 
 pub fn generate(args: TokenStream2, input: TokenStream2) -> TokenStream2 {
@@ -56,11 +49,8 @@ impl Parse for BitfieldStruct {
 
 impl BitfieldStruct {
     fn expand(&self) -> Result<TokenStream2> {
-        if let unit@syn::Fields::Unit = &self.ast.fields {
-            bail!(
-                unit,
-                "unit structs are not supported",
-            )
+        if let unit @ syn::Fields::Unit = &self.ast.fields {
+            bail!(unit, "unit structs are not supported",)
         }
         let size = {
             let mut size = Punctuated::<syn::ExprPath, Token![+]>::new();
@@ -76,7 +66,7 @@ impl BitfieldStruct {
         let byte_conversion_impls = self.expand_byte_conversion_impls();
         let getters_and_setters = self.expand_getters_and_setters()?;
         let ident = &self.ast.ident;
-        expanded.extend(quote!{
+        expanded.extend(quote! {
             #(#attrs)*
             #[repr(transparent)]
             pub struct #ident
@@ -254,10 +244,11 @@ impl BitfieldStruct {
     fn expand_getters_and_setters(&self) -> Result<TokenStream2> {
         let mut expanded = quote! {};
         let mut offset = Punctuated::<syn::Expr, Token![+]>::new();
-        offset.push(syn::parse_quote!{ 0 });
+        offset.push(syn::parse_quote! { 0 });
         for (n, field) in self.ast.fields.iter().enumerate() {
             use crate::ident_ext::IdentExt as _;
-            let field_name = field.ident
+            let field_name = field
+                .ident
                 .as_ref()
                 .map(ToString::to_string)
                 .unwrap_or(format!("{}", n));
@@ -279,24 +270,23 @@ impl BitfieldStruct {
                 })
             }
 
-            let set_assert_msg = proc_macro2::Literal::string(
-                &format!("value out of bounds for field {}.{}", self.ast.ident, field_name)
-            );
+            let set_assert_msg = proc_macro2::Literal::string(&format!(
+                "value out of bounds for field {}.{}",
+                self.ast.ident, field_name
+            ));
 
             let getter_docs = format!("Returns the value of {}.", field_name);
             let setter_docs = format!(
                 "Sets the value of {} to the given value.\n\n\
                  #Panics\n\n\
                  If the given value is out of bounds for {}",
-                 field_name,
-                 field_name,
+                field_name, field_name,
             );
             let checked_setter_docs = format!(
                 "Sets the value of {} to the given value.\n\n\
                  #Errors\n\n\
                  If the given value is out of bounds for {}",
-                 field_name,
-                 field_name,
+                field_name, field_name,
             );
 
             expanded.extend(quote!{
@@ -312,7 +302,7 @@ impl BitfieldStruct {
 
                 #[doc = #setter_docs]
                 #[inline]
-                pub fn #setter_name(&mut self, new_val: <#field_type as modular_bitfield::Specifier>::Face) {
+                pub fn #setter_name(&mut self, new_val: <#field_type as modular_bitfield::Specifier>::Face) -> &mut Self {
                     self.#checked_setter_name(new_val).expect(#set_assert_msg)
                 }
 
@@ -321,7 +311,7 @@ impl BitfieldStruct {
                 pub fn #checked_setter_name(
                     &mut self,
                     new_val: <#field_type as modular_bitfield::Specifier>::Face
-                ) -> Result<(), modular_bitfield::Error> {
+                ) -> Result<&mut Self, modular_bitfield::Error> {
                     use ::core::mem::size_of;
                     let base_bits = 8 * size_of::<<#field_type as modular_bitfield::Specifier>::Base>();
                     let max_value: <#field_type as modular_bitfield::Specifier>::Base = {
@@ -335,10 +325,10 @@ impl BitfieldStruct {
                         return Err(modular_bitfield::Error::OutOfBounds)
                     }
                     self.set::<#field_type>(#offset, raw_val);
-                    Ok(())
+                    Ok(self)
                 }
             });
-            offset.push(syn::parse_quote!{ <#field_type as modular_bitfield::Specifier>::BITS });
+            offset.push(syn::parse_quote! { <#field_type as modular_bitfield::Specifier>::BITS });
         }
         Ok(expanded)
     }
@@ -364,11 +354,8 @@ impl BitfieldStruct {
                 "generics are not supported for bitfields",
             )
         }
-        if let unit@syn::Fields::Unit = &self.ast.fields {
-            bail!(
-                unit,
-                "unit structs are not supported",
-            )
+        if let unit @ syn::Fields::Unit = &self.ast.fields {
+            bail!(unit, "unit structs are not supported",)
         }
         Ok(())
     }
